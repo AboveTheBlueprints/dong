@@ -19,6 +19,8 @@
   .cas::before { content:""; position:absolute; left:6px; top:7px; width:3px; height:3px; border-radius:50%; background:#c9a66b; box-shadow:5px 3px 0 #b8925a, 2px 7px 0 #c9a66b; }
   .gate { background:#3f5a33; }
   .dug { background:#241b12; }
+  .trail::before { content:""; position:absolute; left:8px; top:8px; width:4px; height:4px; border-radius:50%; background:#e08a5a; }
+  .mine::before { content:"×"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#f2d6a8; font-size:14px; }
   .me::after { content:""; position:absolute; inset:4px; border-radius:50%; background:#d8c7a6; box-shadow:0 0 0 2px #0006; }
   #grid.h1 .tun, #grid.h1 .cas, #grid.h1 .dug { animation: shiver 0.5s infinite; --a:#2a2117; }
   #grid.h2 .tun, #grid.h2 .cas, #grid.h2 .dug { animation: shiver 0.3s infinite; --a:#3a2c1c; }
@@ -37,10 +39,13 @@
   #dawn { margin-top:1.4em; display:none; }
   #dawn h2 { font-weight:normal; font-size:18px; color:#efe6d4; margin:.2em 0 .6em; }
   .row { display:flex; align-items:center; margin:2px 0; }
-  .row .lab { width:2.2em; font-size:13px; color:#a39886; }
+  .row .lab { width:2.6em; font-size:13px; color:#a39886; }
   .tick { width:13px; height:18px; margin-right:2px; background:#241f18; }
   .tick.dig { background:#b9875a; }
   .tick.hs { background:#e3c08a; }
+  .tick.it { background:#e08a5a; }
+  #legend { font-size:13px; color:#a39886; margin:.4em 0 .8em; }
+  #note2 { color:#e3c08a; font-size:14px; margin:.3em 0; }
   .tick.z { margin-left:6px; }
   .nums .tick { background:none; font-size:10px; color:#7f7564; overflow:visible; white-space:nowrap; }
 </style>
@@ -48,21 +53,22 @@
 <body>
 <main>
 <h1>洞</h1>
-<div class="intro">你醒了。这是你的洞。你睡在城堡里（有粮的那一块，存粮都在这儿），亮的圆点是你。棕的是土，灰的是石头，绿的是洞口，上面盖着青苔，钻出去是林子。<br>睡前你在东边那条新道里挖了好一阵，挖累了，回来睡的。<br>方向键走，往土里走就是挖；空格 = 等；L = 听（贴着墙听一会儿）。一夜 60 下。</div>
+<div class="intro">你醒了。这是你的洞。你睡在城堡里（有粮的那一块，存粮都在这儿），亮的圆点是你。棕的是土，灰的是石头，绿的是洞口，上面盖着青苔，钻出去是林子。<br>睡前你在东边那条新道里挖了好一阵，挖累了，回来睡的。<br>方向键走，往土里走就是挖；空格 = 等；L = 听（贴着墙听一会儿）。一夜 60 下，一共两夜。</div>
 <div id="wrap">
   <div>
     <div id="grid"></div>
-    <div id="dawn"><h2>天亮了。</h2><div id="chart"></div></div>
+    <div id="dawn"><h2 id="dawnh">天亮了。</h2><div id="legend"></div><div id="chart"></div><div id="sleepbox"><p>白天你睡了一整天。</p><button data-k="睡">到第二夜（回车）</button></div></div>
   </div>
   <div id="side">
     <div id="stat"></div>
+    <div id="note2"></div>
     <div id="sound"></div>
     <div id="keys">
       <span></span><button data-k="上">上</button><span></span>
       <button data-k="左">左</button><button data-k="等">等</button><button data-k="右">右</button>
       <span></span><button data-k="下">下</button><span></span>
     </div>
-    <div id="keys2"><button data-k="听">听</button><button data-k="重来">重来这一夜</button></div>
+    <div id="keys2"><button data-k="听">听</button><button data-k="重来">从头再来</button></div>
     <div id="log"></div>
     <div class="hint">按 R 重来。</div>
   </div>
@@ -76,41 +82,59 @@ const cells = [];
 for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const d = document.createElement("div"); d.className = "c"; grid.appendChild(d); cells.push(d); }
 function render() {
   const s = play(acts);
+  const cur = s.n2 || s.n1;
+  const n2done = s.n2 && s.n2.done;
+  const mine = new Set(), trail = new Set();
+  if (n2done) { for (const k in s.n2.digs) if (s.n2.digs[k]) mine.add(s.n2.digs[k].join(",")); for (const p of s.n2.trail) trail.add(p.join(",")); }
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const ch = s.g[y][x], orig = MAP[y][x];
     let cl = "c " + (ch === "X" ? "rock" : ch === "#" ? "earth" : ch === "C" ? "cas" : ch === "E" ? "gate" : (orig === "#" ? "dug" : "tun"));
     if (s.you[0] === x && s.you[1] === y) cl += " me";
+    else if (mine.has(x + "," + y)) cl += " mine";
+    else if (trail.has(x + "," + y)) cl += " trail";
     cells[y * W + x].className = cl;
   }
   const outside = s.g[s.you[1]][s.you[0]] === "E";
-  grid.className = s.now && !outside ? "h" + Math.min(s.now, 3) : "";
-  document.getElementById("stat").textContent = s.t >= NIGHT ? "天亮了。" : "第 " + s.t + " 下，一夜 " + NIGHT + " 下" + (outside ? "　（在洞外头）" : "");
-  document.getElementById("sound").textContent = s.now && !outside ? ["", "嘶……", "嘶嘶……", "嘶嘶嘶"][Math.min(s.now, 3)] : "";
+  grid.className = cur.now && !outside && !cur.done ? "h" + Math.min(cur.now, 3) : "";
+  const nm = s.night === 1 ? "第一夜" : "第二夜";
+  document.getElementById("stat").textContent = cur.done ? (s.night === 1 ? "第一夜过完了。" : "第二夜过完了。") : nm + "，第 " + cur.t + " 下，一夜 " + NIGHT + " 下" + (outside ? "　（在洞外头）" : "");
+  document.getElementById("note2").textContent = s.night === 2 ? "第二夜。你醒了，还在城堡里。这回睡前什么也没挖。" : "";
+  document.getElementById("sound").textContent = cur.now && !outside && !cur.done ? ["", "嘶……", "嘶嘶……", "嘶嘶嘶"][Math.min(cur.now, 3)] : "";
   const log = document.getElementById("log");
   log.innerHTML = "";
-  s.lines.forEach((l, i) => { const d = document.createElement("div"); d.textContent = l; if (i < s.lines.length - 1) d.className = "old"; log.appendChild(d); });
+  cur.lines.forEach((l, i) => { const d = document.createElement("div"); d.textContent = l; if (i < cur.lines.length - 1) d.className = "old"; log.appendChild(d); });
   log.scrollTop = log.scrollHeight;
   const dawn = document.getElementById("dawn");
-  if (s.t >= NIGHT) {
+  const showN1 = s.night === 1 && s.n1.done;
+  if (showN1 || n2done) {
     dawn.style.display = "block";
+    document.getElementById("sleepbox").style.display = showN1 ? "block" : "none";
+    document.getElementById("dawnh").textContent = showN1 ? "天亮了。" : ({"你": "……", "true": "墙塌了。"}[String(s.n2.broke)] || "天亮了。城堡还是好好的。");
+    document.getElementById("legend").textContent = n2done ? "× 是你这一夜挖开的格子，橙点是土里多出来的一条道。" : "";
     const ch = document.getElementById("chart"); ch.innerHTML = "";
     const mk = (lab, f, cls, a, b) => { const r = document.createElement("div"); r.className = "row" + (cls ? " " + cls : ""); const l = document.createElement("span"); l.className = "lab"; l.textContent = lab; r.appendChild(l);
-      for (let k = a; k <= b; k++) { const d = document.createElement("span"); d.className = "tick" + (k === 1 ? " z" : "") + f(k); r.appendChild(d); if (cls === "nums" && (k % 5 === 0)) d.textContent = k; } ch.appendChild(r); };
-    for (const [a, b] of [[-9, 25], [26, NIGHT]]) {
+      for (let k = a; k <= b; k++) { const d = document.createElement("span"); d.className = "tick" + (k === 1 && a < 1 ? " z" : "") + f(k); r.appendChild(d); if (cls === "nums" && (k % 5 === 0)) d.textContent = k; } ch.appendChild(r); };
+    const n = showN1 ? s.n1 : s.n2;
+    const spans = showN1 ? [[-9, 25], [26, NIGHT]] : [[1, Math.min(30, n.t)], [31, n.t]].filter(p => p[0] <= p[1]);
+    for (const [a, b] of spans) {
       mk("下", k => "", "nums", a, b);
-      mk("挖", k => (k in s.digs ? " dig" : ""), "", a, b);
-      mk("嘶", k => (s.hiss[k] ? " hs" : ""), "", a, b);
+      mk("挖", k => (k in n.digs ? " dig" : ""), "", a, b);
+      if (showN1) mk("嘶", k => (n.hiss[k] ? " hs" : ""), "", a, b);
+      else { mk("你的", k => (n.hiss[k] ? " hs" : ""), "", a, b); mk("它的", k => (n.its[k] ? " it" : ""), "", a, b); }
       const sp = document.createElement("div"); sp.style.height = "10px"; ch.appendChild(sp);
     }
   } else dawn.style.display = "none";
 }
 function press(k) {
   if (k === "重来") { acts = []; render(); return; }
-  if (play(acts).t >= NIGHT) return;
+  const s = play(acts);
+  if (s.n2 && s.n2.done) return;
+  if (s.night === 1 && s.n1.done) { if (k === "睡") { acts.push("睡"); render(); } return; }
+  if (k === "睡") return;
   acts.push(k); render();
 }
 document.querySelectorAll("button[data-k]").forEach(b => b.addEventListener("click", () => press(b.dataset.k)));
-const KEYS = {ArrowUp: "上", ArrowDown: "下", ArrowLeft: "左", ArrowRight: "右", " ": "等", l: "听", L: "听", r: "重来", R: "重来"};
+const KEYS = {ArrowUp: "上", ArrowDown: "下", ArrowLeft: "左", ArrowRight: "右", " ": "等", l: "听", L: "听", r: "重来", R: "重来", Enter: "睡"};
 document.addEventListener("keydown", e => { if (KEYS[e.key]) { e.preventDefault(); press(KEYS[e.key]); } });
 render();
 </script>
